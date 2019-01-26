@@ -324,10 +324,31 @@ init
                     new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x1203     ) { Name = "input" },
                     new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x12D5     ) { Name = "endBoss" },
                     new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x122C     ) { Name = "scorescreen" },
-                    new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x1FEA     ) { Name = "scorescd" },
+                    new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x1FEA     ) { Name = "generictimer" },
                     new MemoryWatcher<int >(  (IntPtr)smsMemoryOffset +  0x1212   ) { Name = "timebonus" },
+                    new MemoryWatcher<int >(  (IntPtr)smsMemoryOffset +  0x12BA   ) { Name = "score" },
                     new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x1C08   ) { Name = "menucheck1" },
                     new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x1C0A   ) { Name = "menucheck2" },
+                    new MemoryWatcher<byte>(  (IntPtr)smsMemoryOffset +  0x12EC   ) { Name = "bosshits" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1CEE  ) { Name = "transportstate" },
+                };
+                
+                break;
+            case "Sonic the Hedgehog (Game Gear)":
+                vars.watchers = new MemoryWatcherList
+                {
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1238  ) { Name = "level" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1000  ) { Name = "state" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1203  ) { Name = "input" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x12D5  ) { Name = "endBoss" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x122C  ) { Name = "scorescreen" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1FEA  ) { Name = "generictimer" },   /* 69 */
+                    new MemoryWatcher<int >( (IntPtr)smsMemoryOffset + 0x12BB ) { Name = "score" },
+                    new MemoryWatcher<int >( (IntPtr)smsMemoryOffset + 0x1213 ) { Name = "timebonus" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1C08  ) { Name = "menucheck1" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1C0A  ) { Name = "menucheck2" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x12ED  ) { Name = "bosshits" },
+                    new MemoryWatcher<byte>( (IntPtr)smsMemoryOffset + 0x1CEE  ) { Name = "transportstate" },
                 };
                 
                 break;
@@ -886,28 +907,62 @@ update
             START Sonic the Hedgehog (Master System) support
         **********************************************************************************/
         case "Sonic the Hedgehog (Master System)":
+        case "Sonic the Hedgehog (Game Gear)":
+            //
             if ( vars.watchers["menucheck1"].Current == 5 && vars.watchers["menucheck1"].Old <= 1 && vars.watchers["menucheck2"].Current == 4 && vars.watchers["menucheck2"].Old <= 1 ) {
                 reset = true;
             }
 
-            if ( !vars.ingame && vars.watchers["state"].Old == 128 && vars.watchers["state"].Current == 224 && vars.watchers["level"].Current == 0 && vars.watchers["input"].Current != 255) {
+            if ( !vars.ingame && 
+               (
+                    (
+                         vars.watchers["state"].Old == 128 || // Master System
+                         vars.watchers["state"].Old == 136    // Game Gear
+                    ) && vars.watchers["state"].Current == 224 
+                && vars.watchers["level"].Current == 0 && vars.watchers["input"].Current != 255) ) {
                 vars.DebugOutput(String.Format("Split Start of Level {0}", vars.watchers["level"].Current));
                 start = true;
             }
-            if (
+
+            if ( vars.ingame &&
                 (
-                    (vars.watchers["level"].Current != vars.watchers["level"].Old && vars.watchers["level"].Current <= 17) || 
-                    (vars.watchers["endBoss"].Current == 89 && vars.watchers["endBoss"].Old != 89 && vars.watchers["level"].Current==17)
+                    (
+                        vars.watchers["level"].Current != vars.watchers["level"].Old && 
+                        vars.watchers["level"].Current <= 17
+                    ) || (
+                        vars.watchers["level"         ].Current == 17 &&
+                        vars.watchers["bosshits"      ].Current == 12 && 
+                        vars.watchers["transportstate"].Current == 1  &&
+                        vars.watchers["transportstate"].Old == 3
+                        
+                    )
                 ) 
                 && (vars.watchers["state"].Current != 0 && vars.watchers["level"].Current > 0)
             ) {
                 vars.DebugOutput(String.Format("Split Start of Level {0}", vars.watchers["level"].Current));
                 split = true;
             }
-            
-            if ( vars.loading && vars.watchers["timebonus"].Current == 0 ) {
+            int curTimeBonus = vars.AsIntended(vars.watchers["timebonus"].Current);
+            int oldTimeBonus = vars.AsIntended(vars.watchers["timebonus"].Old);
+
+            int curscore = vars.AsIntended(vars.watchers["score"].Current);
+            int oldscore = vars.AsIntended(vars.watchers["score"].Old);
+
+
+            vars.DebugOutput(String.Format(
+                "TB: {0} {2:X} oTB: {1} {3:X} ",
+                curTimeBonus, oldTimeBonus, vars.watchers["timebonus"].Current, vars.watchers["timebonus"].Old
+            ));
+            if ( vars.loading && curTimeBonus == 0 ) {
                 vars.loading = false;
-            } else if ( !vars.loading && vars.watchers["timebonus"].Current > 0 && vars.watchers["scorescreen"].Current == 27 && vars.watchers["scorescd"].Current == 22 ) {
+            } else if ( !vars.loading && 
+                curTimeBonus < oldTimeBonus && 
+                curscore > oldscore &&
+                (
+                    vars.watchers["generictimer"].Current == 22 ||  // SMS
+                    vars.watchers["generictimer"].Current == 69     // GG
+                )
+            ) {
                 vars.loading = true;
             }
             break;
@@ -1179,6 +1234,18 @@ startup
             DebugOutput("");
     };
 
+	vars.ByDesign = (Func<int, int, int>)( ( int of, int multiplier ) => {
+        // converts e.g. 0x20 -> 20.
+		return (of == 0) ? of : ( ( ( of >> 4 ) * 10 ) + ( of & 0xF ) ) * multiplier;
+	});
+    vars.AsIntended = ( Func<int, int> )( ( int x ) => {
+        // converts e.g. 0x01, 0x23, 0x45, 0x67 -> 1234567
+        return
+            vars.ByDesign( x       & 0x000000FF, 1000000 ) + 
+            vars.ByDesign( x >> 8  & 0x000000FF,   10000 ) + 
+            vars.ByDesign( x >> 16 & 0x000000FF,     100 ) + 
+            vars.ByDesign( x >> 24 & 0x000000FF,       1 );
+    });
 
 
     vars.DebugOutput = DebugOutput;
